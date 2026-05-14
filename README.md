@@ -1,4 +1,4 @@
-# Fennec
+# 🦊 Fennec
 
 A Rust-based **Cyber Threat Intelligence (CTI)** platform, modelled after projects like MISP, built on a strict Domain-Driven Design + Hexagonal Architecture + CQRS foundation.
 
