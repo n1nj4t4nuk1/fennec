@@ -14,5 +14,5 @@ jobs:
           MIRROR_GIT_USERNAME: n1nj4t4nuk1
           MIRROR_GIT_EMAIL: javierparada@pm.me
           MIRROR_GIT_HOSTNAME: codeberg.org
-          MIRROR_GIT_PROJECT: "rust-ddd-skeleton"
+          MIRROR_GIT_PROJECT: "fennec"
           MIRROR_GIT_TOKEN: ${{ secrets.MIRROR_CODEBERG_TOKEN }}
