@@ -4,18 +4,18 @@ Command Query Responsibility Segregation separates write operations (commands) f
 
 ## Why CQRS?
 
-In practical terms, every HTTP endpoint either changes data (POST, PUT, DELETE) or reads it (GET). CQRS formalizes this split -- write operations go through the `CommandBus`, read operations go through the `QueryBus`. Each side has its own handler, its own response type, and its own optimization path. This is not an abstract architectural preference; it mirrors the reality of how web services work.
+In practical terms, every HTTP endpoint either changes data (POST, PUT, DELETE) or reads it (GET). CQRS formalises this split — write operations go through the `CommandBus`, read operations through the `QueryBus`. Each side has its own handler, its own response type, and its own optimisation path. This is not an abstract architectural preference; it mirrors the reality of how web services work.
 
 The benefit is that handlers stay small and focused. A create handler only creates. A find handler only finds. There is no temptation to mix read and write logic in the same place, no risk of a query accidentally triggering a side effect, and no reason for a command handler to assemble a complex read model. Each handler does one thing, which makes it straightforward to test, review, and maintain.
 
-At runtime the mechanism is simple. The bus receives a boxed command or query, looks up the matching handler by `TypeId` (Rust's built-in type identity system), calls the handler, and returns the response boxed as `dyn Any`. The caller then downcasts the response to the expected concrete type. This is the same dispatch pattern used in actor frameworks and event systems -- it trades a small amount of type safety at the boundary (the downcast) for complete decoupling between the bus infrastructure and the concrete handler types.
+At runtime the mechanism is simple. The bus receives a boxed command or query, looks up the matching handler by `TypeId` (Rust's built-in type identity system), calls the handler, and returns the response boxed as `dyn Any`. The caller then downcasts the response to the expected concrete type. This is the same dispatch pattern used in actor frameworks and event systems — it trades a small amount of type safety at the boundary (the downcast) for complete decoupling between the bus infrastructure and the concrete handler types.
 
 ## Core concepts
 
 | Concept | Role |
 |---|---|
-| `Command` | Intent to change state -- dispatched on the command bus, returns a typed response |
-| `Query` | Request for data -- dispatched on the query bus, returns a typed response |
+| `Command` | Intent to change state — dispatched on the command bus, returns a typed response |
+| `Query` | Request for data — dispatched on the query bus, returns a typed response |
 | `CommandBus` | Routes a command to its registered handler, returns `Box<dyn Any + Send + Sync>` |
 | `QueryBus` | Routes a query to its registered handler, returns `Box<dyn Any + Send + Sync>` |
 | `CommandHandler<C>` | Processes one command type; declares `type Response` |
@@ -32,13 +32,13 @@ HTTP handler
         │
         └── InMemoryCommandBus
               │  TypeId lookup -> HandlerFn
-              └── CommandHandler<CreateConfigEntryCommand>::handle(cmd)
-                    │                        -> Result<CreateConfigEntryResponse, CommandBusError>
-                    └── ConfigEntryCreator::execute(...)
-                          ├── ConfigEntryRepository::save(&entry)
-                          └── EventBus::publish([ConfigEntryCreatedEvent])
+              └── CommandHandler<CreateSourceCommand>::handle(cmd)
+                    │                        -> Result<CreateSourceResponse, CommandBusError>
+                    └── SourceCreator::execute(...)
+                          ├── SourceRepository::save(&source)
+                          └── EventBus::publish([SourceCreatedEvent])
 
-HTTP handler receives Box<dyn Any>, downcasts to CreateConfigEntryResponse,
+HTTP handler receives Box<dyn Any>, downcasts to CreateSourceResponse,
 checks response.error to determine HTTP status code.
 ```
 
@@ -51,13 +51,13 @@ HTTP handler
         │
         └── InMemoryQueryBus
               │  TypeId lookup -> HandlerFn
-              └── QueryHandler<FindConfigEntryQuery>::handle(query)
-                    │                        -> Result<FindConfigEntryResponse, QueryBusError>
-                    └── ConfigEntryFinder::execute(key)
-                          └── ConfigEntryRepository::find_by_key(&key) -> ConfigEntry (domain entity)
+              └── QueryHandler<FindSourceQuery>::handle(query)
+                    │                        -> Result<FindSourceResponse, QueryBusError>
+                    └── SourceFinder::execute(id)
+                          └── SourceRepository::find_by_id(&id) -> Source (domain entity)
 
-QueryHandler maps the domain entity to a FindConfigEntryResponse { config_entry: Some(ConfigEntryEntry { ... }), error: None }.
-HTTP handler downcasts Box<dyn Any> to FindConfigEntryResponse and checks response.error.
+QueryHandler maps the domain entity to FindSourceResponse { source: Some(SourceEntry { ... }), error: None }.
+HTTP handler downcasts Box<dyn Any> to FindSourceResponse and checks response.error.
 ```
 
 ## Traits
@@ -120,26 +120,26 @@ pub trait QueryBus: Send + Sync {
 }
 ```
 
-A key design decision is how handlers communicate success and failure back to the HTTP layer. Rather than using Rust's `Result` to carry domain errors (which would couple the bus infrastructure to domain error types), handlers always return `Ok(Response)` -- even when the domain operation fails. The response struct carries an optional error field that the controller inspects to determine the HTTP status code.
+A key design decision is how handlers communicate success and failure back to the HTTP layer. Rather than using Rust's `Result` to carry domain errors (which would couple the bus infrastructure to domain error types), handlers always return `Ok(Response)` — even when the domain operation fails. The response struct carries an optional error field that the controller inspects to determine the HTTP status code.
 
 ## Response envelope pattern
 
-Both command and query handlers return a **response envelope** -- a struct that carries either the data or a structured error, never both.
+Both command and query handlers return a **response envelope** — a struct that carries either the data or a structured error, never both.
 
 ### Command responses (no data, only error)
 
 ```rust
-pub struct CreateConfigEntryResponse {
-    pub error: Option<ConfigEntryErrorEntry>,
+pub struct CreateSourceResponse {
+    pub error: Option<SourceErrorEntry>,
 }
 ```
 
 ### Query responses (data + error)
 
 ```rust
-pub struct FindConfigEntryResponse {
-    pub config_entry: Option<ConfigEntryEntry>,  // data DTO
-    pub error: Option<ConfigEntryErrorEntry>,     // structured error
+pub struct FindSourceResponse {
+    pub source: Option<SourceEntry>,        // data DTO
+    pub error:  Option<SourceErrorEntry>,   // structured error
 }
 ```
 
@@ -148,30 +148,34 @@ pub struct FindConfigEntryResponse {
 Every context defines an `ErrorEntry` with two fields:
 
 ```rust
-pub struct ConfigEntryErrorEntry {
+pub struct SourceErrorEntry {
     pub message: String,    // human-readable error message
     pub concept: String,    // PascalCase: "NotFound", "AlreadyExists", "Unexpected"
 }
 ```
 
-### Handler pattern -- command example
+### Handler pattern — command example
 
 ```rust
 #[async_trait]
-impl CommandHandler<CreateConfigEntryCommand> for CreateConfigEntryCommandHandler {
-    type Response = CreateConfigEntryResponse;
+impl CommandHandler<CreateSourceCommand> for CreateSourceCommandHandler {
+    type Response = CreateSourceResponse;
 
-    async fn handle(&self, command: CreateConfigEntryCommand) -> Result<Self::Response, CommandBusError> {
-        match self.creator.execute(command.key, command.value).await {
-            Ok(()) => Ok(CreateConfigEntryResponse { error: None }),
+    async fn handle(&self, command: CreateSourceCommand) -> Result<Self::Response, CommandBusError> {
+        match self
+            .creator
+            .execute(command.id, command.source_type, command.status, command.description)
+            .await
+        {
+            Ok(()) => Ok(CreateSourceResponse { error: None }),
             Err(e) => {
                 let concept = match &e {
-                    ConfigEntryRepositoryError::NotFound => "NotFound",
-                    ConfigEntryRepositoryError::AlreadyExists => "AlreadyExists",
-                    ConfigEntryRepositoryError::Unexpected(_) => "Unexpected",
+                    SourceRepositoryError::NotFound      => "NotFound",
+                    SourceRepositoryError::AlreadyExists => "AlreadyExists",
+                    SourceRepositoryError::Unexpected(_) => "Unexpected",
                 };
-                Ok(CreateConfigEntryResponse {
-                    error: Some(ConfigEntryErrorEntry {
+                Ok(CreateSourceResponse {
+                    error: Some(SourceErrorEntry {
                         message: e.to_string(),
                         concept: concept.to_string(),
                     }),
@@ -182,33 +186,37 @@ impl CommandHandler<CreateConfigEntryCommand> for CreateConfigEntryCommandHandle
 }
 ```
 
-### Handler pattern -- query example
+### Handler pattern — query example
 
 The **finder** (domain service) returns domain entities. The **handler** maps them to response DTOs:
 
 ```rust
 #[async_trait]
-impl QueryHandler<FindConfigEntryQuery> for FindConfigEntryQueryHandler {
-    type Response = FindConfigEntryResponse;
+impl QueryHandler<FindSourceQuery> for FindSourceQueryHandler {
+    type Response = FindSourceResponse;
 
-    async fn handle(&self, query: FindConfigEntryQuery) -> Result<Self::Response, QueryBusError> {
-        match self.finder.execute(query.key).await {
-            Ok(entry) => Ok(FindConfigEntryResponse {
-                config_entry: Some(ConfigEntryEntry {
-                    key: entry.key().value().to_string(),
-                    value: entry.value().value().to_string(),
+    async fn handle(&self, query: FindSourceQuery) -> Result<Self::Response, QueryBusError> {
+        match self.finder.execute(query.id).await {
+            Ok(source) => Ok(FindSourceResponse {
+                source: Some(SourceEntry {
+                    id:           source.id().to_string(),
+                    source_type:  source.source_type().to_string(),
+                    status:       source.status().to_string(),
+                    description:  source.description().value().to_string(),
+                    created_at:   source.created_at().value(),
+                    updated_at:   source.updated_at().value(),
                 }),
                 error: None,
             }),
             Err(e) => {
                 let concept = match &e {
-                    ConfigEntryRepositoryError::NotFound => "NotFound",
-                    ConfigEntryRepositoryError::AlreadyExists => "AlreadyExists",
-                    ConfigEntryRepositoryError::Unexpected(_) => "Unexpected",
+                    SourceRepositoryError::NotFound      => "NotFound",
+                    SourceRepositoryError::AlreadyExists => "AlreadyExists",
+                    SourceRepositoryError::Unexpected(_) => "Unexpected",
                 };
-                Ok(FindConfigEntryResponse {
-                    config_entry: None,
-                    error: Some(ConfigEntryErrorEntry {
+                Ok(FindSourceResponse {
+                    source: None,
+                    error:  Some(SourceErrorEntry {
                         message: e.to_string(),
                         concept: concept.to_string(),
                     }),
@@ -219,7 +227,7 @@ impl QueryHandler<FindConfigEntryQuery> for FindConfigEntryQueryHandler {
 }
 ```
 
-### Controller pattern -- using the envelope
+### Controller pattern — using the envelope
 
 Controllers downcast the `Box<dyn Any>` and check the error field:
 
@@ -227,14 +235,14 @@ Controllers downcast the `Box<dyn Any>` and check the error field:
 match state.command_bus.dispatch(Box::new(command)).await {
     Ok(boxed) => {
         let response = boxed
-            .downcast::<CreateConfigEntryResponse>()
-            .expect("Unexpected response type from CreateConfigEntryCommandHandler");
+            .downcast::<CreateSourceResponse>()
+            .expect("Unexpected response type from CreateSourceCommandHandler");
 
         if let Some(ref error) = response.error {
             match error.concept.as_str() {
                 "AlreadyExists" => HttpResponse::Conflict().body(error.message.clone()),
-                "NotFound" => HttpResponse::NotFound().body(error.message.clone()),
-                _ => HttpResponse::InternalServerError().body(error.message.clone()),
+                "NotFound"      => HttpResponse::NotFound().body(error.message.clone()),
+                _               => HttpResponse::InternalServerError().body(error.message.clone()),
             }
         } else {
             HttpResponse::Created().finish()
@@ -244,7 +252,7 @@ match state.command_bus.dispatch(Box::new(command)).await {
 }
 ```
 
-The bus implementations are intentionally simple. There is no async message queue, no serialization, no network hop. Everything happens in-process and in-memory. This keeps latency minimal and makes the system easy to debug -- you can step through a command's entire lifecycle in a single stack trace.
+The bus implementations are intentionally simple. There is no async message queue, no serialisation, no network hop. Everything happens in-process and in-memory. This keeps latency minimal and makes the system easy to debug — you can step through a command's entire lifecycle in a single stack trace.
 
 ## In-memory implementations
 
@@ -254,14 +262,14 @@ The response is boxed as `Box<dyn Any + Send + Sync>` inside the bus and must be
 
 ```rust
 // Registration (in build_state)
-command_bus.register(CreateConfigEntryCommandHandler::new(creator))
-    .expect("Failed to register CreateConfigEntryCommandHandler");
+command_bus.register(CreateSourceCommandHandler::new(creator))
+    .expect("Failed to register CreateSourceCommandHandler");
 
 // Dispatch (in HTTP handler)
 let boxed = state.command_bus
-    .dispatch(Box::new(CreateConfigEntryCommand { key, value }))
+    .dispatch(Box::new(CreateSourceCommand { id, source_type, status, description }))
     .await?;
-let response = boxed.downcast::<CreateConfigEntryResponse>().unwrap();
+let response = boxed.downcast::<CreateSourceResponse>().unwrap();
 ```
 
 ## Wiring in build_state()
@@ -270,28 +278,25 @@ All buses are built and handlers registered inside `build_state()` in each app's
 
 ```rust
 pub fn build_state() -> web::Data<AppState> {
-    let repo: Arc<dyn ConfigEntryRepository> = Arc::new(InMemoryConfigEntryRepository::new());
+    let repo: Arc<dyn SourceRepository> = Arc::new(InMemorySourceRepository::new());
     let event_bus: Arc<dyn EventBus> = Arc::new(InMemoryEventBus::new());
 
-    // Domain services
-    let creator = ConfigEntryCreator::new(Arc::clone(&repo), Arc::clone(&event_bus));
-    let finder  = ConfigEntryFinder::new(Arc::clone(&repo));
-    let updater = ConfigEntryUpdater::new(Arc::clone(&repo), Arc::clone(&event_bus));
-    let deleter = ConfigEntryDeleter::new(Arc::clone(&repo), Arc::clone(&event_bus));
+    let creator = SourceCreator::new(Arc::clone(&repo), Arc::clone(&event_bus));
+    let finder  = SourceFinder::new(Arc::clone(&repo));
+    let updater = SourceUpdater::new(Arc::clone(&repo), Arc::clone(&event_bus));
+    let deleter = SourceDeleter::new(Arc::clone(&repo), Arc::clone(&event_bus));
 
-    // Command handlers
     let mut command_bus = InMemoryCommandBus::new();
-    command_bus.register(CreateConfigEntryCommandHandler::new(creator))
-        .expect("Failed to register CreateConfigEntryCommandHandler");
-    command_bus.register(UpdateConfigEntryCommandHandler::new(updater))
-        .expect("Failed to register UpdateConfigEntryCommandHandler");
-    command_bus.register(DeleteConfigEntryCommandHandler::new(deleter))
-        .expect("Failed to register DeleteConfigEntryCommandHandler");
+    command_bus.register(CreateSourceCommandHandler::new(creator))
+        .expect("Failed to register CreateSourceCommandHandler");
+    command_bus.register(UpdateSourceCommandHandler::new(updater))
+        .expect("Failed to register UpdateSourceCommandHandler");
+    command_bus.register(DeleteSourceCommandHandler::new(deleter))
+        .expect("Failed to register DeleteSourceCommandHandler");
 
-    // Query handlers
     let mut query_bus = InMemoryQueryBus::new();
-    query_bus.register(FindConfigEntryQueryHandler::new(finder))
-        .expect("Failed to register FindConfigEntryQueryHandler");
+    query_bus.register(FindSourceQueryHandler::new(finder))
+        .expect("Failed to register FindSourceQueryHandler");
 
     web::Data::new(AppState {
         command_bus: Arc::new(command_bus),
@@ -300,13 +305,13 @@ pub fn build_state() -> web::Data<AppState> {
 }
 ```
 
-Adding a new use case follows a predictable recipe. Once you have done it once, subsequent use cases are mostly mechanical -- create the structs, implement the traits, register the handler, wire the HTTP endpoint.
+Adding a new use case follows a predictable recipe. Once you have done it once, subsequent use cases are mostly mechanical — create the structs, implement the traits, register the handler, wire the HTTP endpoint.
 
 ## Adding a new use case
 
 1. Create a command or query struct in `libs/<context>/src/<context>/application/<use_case>/`.
-2. Create a response struct with `error: Option<ConfigEntryErrorEntry>` (commands) or both data and error fields (queries).
+2. Create a response struct with `error: Option<NounErrorEntry>` (commands) or both data and error fields (queries).
 3. Create a domain service that calls the repository and/or event bus. Finders return domain entities.
-4. Create a handler that delegates to the service. The handler maps domain entities to DTOs and domain errors to `ConfigEntryErrorEntry`.
+4. Create a handler that delegates to the service. The handler maps domain entities to DTOs and domain errors to `NounErrorEntry`.
 5. Register the handler in `build_state()` in the relevant app's `lib.rs`.
 6. Add an HTTP handler that downcasts the bus response and checks `response.error`.

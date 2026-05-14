@@ -4,7 +4,9 @@ An app is an Actix-Web binary that wires together one or more bounded contexts a
 
 An app is the outermost layer of the architecture -- it is what actually runs as a process and listens for HTTP requests. Apps are thin: they wire together bounded contexts with their infrastructure, register handlers on the CQRS buses, and define HTTP routes. The business logic lives entirely in the bounded context libraries.
 
-Each app follows the same structure: a `lib.rs` that exposes `build_state()` (dependency wiring) and `configure_routes()` (HTTP routing), a `main.rs` that starts the server, and a set of HTTP handlers organized by resource. This consistency means that once you understand one app, you understand them all.
+Each app follows the same structure: a `lib.rs` that exposes `build_state()` (dependency wiring) and `configure_routes()` (HTTP routing), a `main.rs` that starts the server, and a set of HTTP handlers organised by resource. This consistency means that once you understand one app, you understand them all.
+
+For working references, see **`apps/cti_api/`** (recommended convention: `<resource>/controllers/{post,get,put,delete}.rs` + `<resource>/request_dtos/`) and **`apps/config_api/`** (older convention: verb files directly under the resource folder). New apps should adopt the `cti_api` layout.
 
 This guide adds a `user_api` app that exposes the `user` bounded context (see [ADDING_A_BOUNDED_CONTEXT.md](ADDING_A_BOUNDED_CONTEXT.md)).
 

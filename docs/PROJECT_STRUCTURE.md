@@ -2,169 +2,178 @@
 
 Full file tree with the purpose of every directory and key file.
 
-This document provides a complete map of the repository. It is useful for orientation when you first encounter the codebase, and as a reference when you need to find where something lives. The tree below is annotated with the purpose of every directory and key file.
+This document is the navigational map of the Fennec repository: every folder and every notable file is annotated with its role. Use it when you first encounter the codebase and as a reference whenever you need to find where something lives.
 
-The repository is organized into three main areas: `apps/` contains the HTTP services that users interact with, `libs/` contains the business logic organized into bounded contexts, and `tests/` contains external test suites that mirror the source structure. Shared infrastructure (CQRS buses, event bus, value objects) lives in `libs/shared/`.
+The repository is organised into three top-level areas:
+
+- `apps/` — Actix-Web HTTP services that users interact with.
+- `libs/` — business logic, one bounded context per crate, plus shared infrastructure.
+- `tests/` — external test crates that mirror the production structure.
 
 ```
 .
-├── Cargo.toml                  # Workspace root -- lists all member crates
+├── Cargo.toml                  # Workspace root — lists all member crates
 ├── Cargo.lock                  # Pinned dependency versions (commit this)
-├── Makefile                    # Developer shortcuts -- delegates per-app targets
-├── docker-compose.yml          # PostgreSQL (add more services as needed)
-├── .env.example                # Environment variable template
-├── .gitignore
+├── Makefile                    # Root Makefile (delegates to per-app Makefiles via $(MAKE) -C)
+├── docker-compose.yml          # PostgreSQL scaffolding (not yet integrated)
+├── LICENSE
+├── .gitignore                  # Ignores target/, CLAUDE.md, .claude/, ...
 │
 ├── apps/
-│   └── config_api/             # Example REST API -- key/value config store
-│       ├── Cargo.toml          # Package: config-api, declares [lib] + [[bin]] + [[test]]
-│       ├── Makefile            # Per-app build/run/test targets
-│       ├── Dockerfile          # Multi-stage build
+│   ├── cti_api/                # CTI HTTP API (port 8081) — exposes the kernel BC
+│   │   ├── Cargo.toml          # Package: cti-api, declares [lib] + [[bin]] + [[test]]
+│   │   ├── Makefile            # Per-app build/run/test targets
+│   │   └── src/
+│   │       ├── main.rs         # Binary entry point: init tracing, build_state, HttpServer
+│   │       ├── lib.rs          # Library root: AppState, build_state(), configure_routes()
+│   │       ├── health/
+│   │       │   ├── mod.rs
+│   │       │   └── get.rs      # GET /health -> 200
+│   │       └── source/
+│   │           ├── mod.rs      # pub mod controllers; request_dtos;
+│   │           ├── controllers/
+│   │           │   ├── post.rs    # POST   /sources       -> 201 | 400 | 409
+│   │           │   ├── get.rs     # GET    /sources/{id}  -> 200 | 400 | 404
+│   │           │   ├── put.rs     # PUT    /sources/{id}  -> 200 | 400 | 404
+│   │           │   └── delete.rs  # DELETE /sources/{id}  -> 204 | 400 | 404
+│   │           └── request_dtos/
+│   │               ├── create_source_request.rs   # { id, source_type, status, description }
+│   │               └── update_source_request.rs   # { status, description }
+│   │
+│   └── config_api/             # Reference HTTP API (port 8080) — exposes the config BC
+│       ├── Cargo.toml          # Package: config-api
+│       ├── Makefile
 │       └── src/
-│           ├── main.rs         # Binary entry point: init tracing, build_state, HttpServer
-│           ├── lib.rs          # Library root: AppState, build_state(), configure_routes()
-│           ├── health/
-│           │   ├── mod.rs
-│           │   └── get.rs      # GET /health -> 200
+│           ├── main.rs
+│           ├── lib.rs
+│           ├── health/get.rs
 │           └── config_entry/
-│               ├── mod.rs
-│               ├── post.rs     # POST /config -> 201 | 409
-│               ├── get.rs      # GET  /config/{key} -> 200 | 404
-│               ├── put.rs      # PUT  /config/{key} -> 200 | 404
-│               ├── delete.rs   # DELETE /config/{key} -> 204 | 404
-│               ├── create_config_entry_request.rs   # { key, value }
-│               └── update_config_entry_request.rs   # { value }
+│               ├── post.rs / get.rs / put.rs / delete.rs
+│               ├── create_config_entry_request.rs
+│               └── update_config_entry_request.rs
 │
 ├── libs/
-│   ├── config/                 # ConfigEntry bounded context
+│   ├── kernel/                 # CTI kernel bounded context
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── lib.rs          # pub mod config_entry;
-│   │       └── config_entry/
+│   │       ├── lib.rs          # pub mod source;
+│   │       └── source/
 │   │           ├── mod.rs      # pub mod application; domain; infrastructure;
 │   │           │
 │   │           ├── domain/
-│   │           │   ├── mod.rs
 │   │           │   ├── entities/
-│   │           │   │   └── config_entry.rs         # ConfigEntry aggregate
+│   │           │   │   └── source.rs                   # Source aggregate
 │   │           │   ├── value_objects/
-│   │           │   │   ├── config_key.rs            # ConfigKey(String)
-│   │           │   │   └── config_value.rs          # ConfigValue(String)
+│   │           │   │   ├── source_id.rs                # SourceId(Uuid) — externally provided
+│   │           │   │   ├── source_type.rs              # enum SourceType { Url } + from_str
+│   │           │   │   ├── source_status.rs            # enum SourceStatus { Active, Inactive }
+│   │           │   │   ├── source_description.rs       # SourceDescription(String)
+│   │           │   │   ├── source_created_at.rs        # SourceCreatedAt(SystemTime)
+│   │           │   │   └── source_updated_at.rs        # SourceUpdatedAt(SystemTime)
 │   │           │   ├── errors/
-│   │           │   │   └── config_entry_repository_error.rs  # NotFound | AlreadyExists | Unexpected
+│   │           │   │   └── source_repository_error.rs  # NotFound | AlreadyExists | Unexpected
 │   │           │   ├── repositories/
-│   │           │   │   └── config_entry_repository.rs        # async trait (save/find/update/delete)
+│   │           │   │   └── source_repository.rs        # async trait (save/find_by_id/update/delete)
 │   │           │   └── events/
-│   │           │       ├── config_entry_created_event.rs
-│   │           │       ├── config_entry_updated_event.rs     # carries new_value + old_value
-│   │           │       ├── config_entry_deleted_event.rs
-│   │           │       ├── create_config_entry_created_event.rs   # factory fn from aggregate
-│   │           │       ├── create_config_entry_updated_event.rs
-│   │           │       └── create_config_entry_deleted_event.rs
+│   │           │       ├── source_created_event.rs
+│   │           │       ├── source_updated_event.rs     # carries old + new status / description
+│   │           │       ├── source_deleted_event.rs
+│   │           │       └── create_source_*_event.rs    # factory fns
 │   │           │
 │   │           ├── application/
-│   │           │   ├── create_config_entry/
-│   │           │   │   ├── create_config_entry_command.rs          # Command struct
-│   │           │   │   ├── create_config_entry_response.rs         # { error: Option<ErrorEntry> }
-│   │           │   │   ├── config_entry_creator.rs                 # Domain service
-│   │           │   │   └── create_config_entry_command_handler.rs  # CommandHandler impl
-│   │           │   ├── find_config_entry/
-│   │           │   │   ├── find_config_entry_query.rs
-│   │           │   │   ├── find_config_entry_response.rs           # { config_entry, error }
-│   │           │   │   ├── config_entry_finder.rs
-│   │           │   │   └── find_config_entry_query_handler.rs      # QueryHandler impl
-│   │           │   ├── update_config_entry/
-│   │           │   │   ├── update_config_entry_command.rs
-│   │           │   │   ├── update_config_entry_response.rs
-│   │           │   │   ├── config_entry_updater.rs
-│   │           │   │   └── update_config_entry_command_handler.rs
-│   │           │   └── delete_config_entry/
-│   │           │       ├── delete_config_entry_command.rs
-│   │           │       ├── delete_config_entry_response.rs
-│   │           │       ├── config_entry_deleter.rs
-│   │           │       └── delete_config_entry_command_handler.rs
+│   │           │   ├── create_source/
+│   │           │   │   ├── create_source_command.rs            # Command struct
+│   │           │   │   ├── create_source_response.rs           # { error: Option<SourceErrorEntry> }
+│   │           │   │   ├── source_creator.rs                   # Domain service (auto-sets timestamps)
+│   │           │   │   └── create_source_command_handler.rs    # CommandHandler impl
+│   │           │   ├── find_source/
+│   │           │   │   ├── find_source_query.rs
+│   │           │   │   ├── find_source_response.rs             # { source: Option<SourceEntry>, error }
+│   │           │   │   ├── source_finder.rs
+│   │           │   │   └── find_source_query_handler.rs
+│   │           │   ├── update_source/
+│   │           │   │   ├── update_source_command.rs            # only status + description (type immutable)
+│   │           │   │   ├── update_source_response.rs
+│   │           │   │   ├── source_updater.rs                   # regenerates updated_at
+│   │           │   │   └── update_source_command_handler.rs
+│   │           │   └── delete_source/
+│   │           │       ├── delete_source_command.rs
+│   │           │       ├── delete_source_response.rs
+│   │           │       ├── source_deleter.rs
+│   │           │       └── delete_source_command_handler.rs
 │   │           │
 │   │           └── infrastructure/
 │   │               └── persistence/
 │   │                   └── in_memory/
-│   │                       └── in_memory_config_entry_repository.rs  # HashMap + Mutex
+│   │                       └── in_memory_source_repository.rs  # HashMap<Uuid, Source> + Mutex
+│   │
+│   ├── config/                 # Reference bounded context — ConfigEntry CRUD
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       └── config_entry/   # Same layout as kernel/source/ above
 │   │
 │   └── shared/
 │       ├── cqrs/               # CQRS building blocks
-│       │   ├── Cargo.toml      # dep: async-trait
 │       │   └── src/
-│       │       ├── lib.rs
 │       │       ├── command/
-│       │       │   ├── domain/
-│       │       │   │   ├── command.rs              # AnyCommand + Command marker trait
-│       │       │   │   ├── command_bus.rs          # async trait CommandBus
-│       │       │   │   ├── command_bus_error.rs    # HandlerNotFound | HandlerAlreadyRegistered | HandlerError
-│       │       │   │   └── command_handler.rs      # async trait CommandHandler<C>
-│       │       │   └── infrastructure/in_memory/
-│       │       │       └── in_memory_command_bus.rs  # HashMap<TypeId, HandlerFn>
+│       │       │   ├── domain/                # Command, CommandBus, CommandHandler, errors
+│       │       │   └── infrastructure/in_memory/in_memory_command_bus.rs
 │       │       └── query/
-│       │           ├── domain/
-│       │           │   ├── query.rs
-│       │           │   ├── query_bus.rs            # async fn ask() -> Box<dyn Any>
-│       │           │   ├── query_bus_error.rs
-│       │           │   └── query_handler.rs        # type Response; async fn handle()
-│       │           └── infrastructure/in_memory/
-│       │               └── in_memory_query_bus.rs
+│       │           ├── domain/                # Query, QueryBus, QueryHandler, errors
+│       │           └── infrastructure/in_memory/in_memory_query_bus.rs
 │       │
 │       ├── domain-events/      # Event bus building blocks
-│       │   ├── Cargo.toml      # dep: uuid
 │       │   └── src/
-│       │       ├── lib.rs
 │       │       ├── domain/
 │       │       │   ├── domain_event.rs             # DomainEvent trait + DomainEventBase
 │       │       │   ├── domain_event_subscriber.rs  # fn on(&self, event: &E) -> Result
-│       │       │   ├── event_bus.rs                # fn publish(Vec<Box<dyn DomainEvent>>) -> Result
-│       │       │   └── event_bus_error.rs          # DispatchError(String)
-│       │       └── infrastructure/in_memory/
-│       │           └── in_memory_event_bus.rs      # HashMap<TypeId, Vec<HandlerFn>>
+│       │       │   ├── event_bus.rs                # publish(Vec<Box<dyn DomainEvent>>)
+│       │       │   └── event_bus_error.rs
+│       │       └── infrastructure/in_memory/in_memory_event_bus.rs
 │       │
 │       └── valueobject/        # Reusable value object primitives
-│           ├── Cargo.toml
 │           └── src/
-│               ├── domain/
-│               │   ├── strings/string_value_object.rs   # StringValueObject(String)
-│               │   └── errors/value_object_validation_error.rs
-│               ├── application/mod.rs   # (reserved)
-│               └── infrastructure/mod.rs  # (reserved)
+│               └── domain/
+│                   ├── strings/string_value_object.rs    # StringValueObject(String)
+│                   └── errors/value_object_validation_error.rs
 │
 ├── tests/
 │   ├── apps/
-│   │   └── config_api/         # E2E tests for config_api (registered via [[test]] in Cargo.toml)
-│   │       ├── tests.rs        # mod src;
-│   │       └── src/
-│   │           ├── mod.rs
-│   │           ├── health/health_test.rs
-│   │           └── config/
-│   │               ├── create_config_entry_test.rs
-│   │               ├── find_config_entry_test.rs
-│   │               ├── update_config_entry_test.rs
-│   │               └── delete_config_entry_test.rs
+│   │   ├── cti_api/            # E2E tests for cti_api
+│   │   │   ├── tests.rs
+│   │   │   └── src/
+│   │   │       ├── mod.rs
+│   │   │       ├── health/health_test.rs
+│   │   │       └── source/
+│   │   │           ├── create_source_test.rs
+│   │   │           ├── find_source_test.rs
+│   │   │           ├── update_source_test.rs
+│   │   │           └── delete_source_test.rs
+│   │   │
+│   │   └── config_api/         # E2E tests for config_api (mirrors cti_api layout)
 │   │
 │   └── libs/
-│       └── config/             # Unit tests for libs/config
-│           ├── tests.rs
-│           └── src/
-│               ├── mocks/
-│               │   ├── config_entry_repository_mock.rs  # Configurable test double
-│               │   └── event_bus_mock.rs                # Records published events
-│               └── config_entry/
-│                   ├── domain/
-│                   │   ├── entities/mothers/config_entry_mother.rs
-│                   │   └── value_objects/mothers/
-│                   │       ├── config_key_mother.rs
-│                   │       └── config_value_mother.rs
-│                   └── application/
-│                       ├── create_config_entry/config_entry_creator_tests.rs
-│                       ├── find_config_entry/config_entry_finder_tests.rs
-│                       ├── update_config_entry/config_entry_updater_tests.rs
-│                       └── delete_config_entry/config_entry_deleter_tests.rs
-│
-├── migrations/                 # SQL migration files (empty, add when using PostgreSQL)
+│       ├── kernel/             # Unit tests for libs/kernel
+│       │   ├── tests.rs
+│       │   └── src/
+│       │       ├── mocks/
+│       │       │   ├── source_repository_mock.rs   # Configurable behavior enums
+│       │       │   └── event_bus_mock.rs           # Records published events
+│       │       └── source/
+│       │           ├── domain/
+│       │           │   ├── entities/mothers/source_mother.rs
+│       │           │   └── value_objects/mothers/
+│       │           │       ├── source_id_mother.rs
+│       │           │       ├── source_type_mother.rs
+│       │           │       ├── source_status_mother.rs
+│       │           │       └── source_description_mother.rs
+│       │           └── application/
+│       │               ├── create_source/source_creator_tests.rs
+│       │               ├── find_source/source_finder_tests.rs
+│       │               ├── update_source/source_updater_tests.rs
+│       │               └── delete_source/source_deleter_tests.rs
+│       │
+│       └── config/             # Unit tests for libs/config (mirrors kernel layout)
 │
 └── docs/
     ├── ARCHITECTURE.md
@@ -179,70 +188,85 @@ The repository is organized into three main areas: `apps/` contains the HTTP ser
 
 ---
 
+## App folder convention
+
+Apps follow a slight variation of the bounded-context layout: HTTP handlers live under `<resource>/controllers/{post,get,put,delete}.rs` and the request DTOs under `<resource>/request_dtos/`. This keeps each resource module clean — one file per HTTP verb, DTOs side by side — and scales naturally when a single app exposes several aggregates.
+
+```
+apps/<api>/src/<resource>/
+  controllers/
+    post.rs / get.rs / put.rs / delete.rs
+  request_dtos/
+    create_<resource>_request.rs
+    update_<resource>_request.rs
+```
+
+`cti_api` uses this convention. `config_api` predates it and keeps the verb files directly under the resource folder — both layouts are equivalent in behaviour; new apps should adopt the `controllers/` + `request_dtos/` form.
+
+---
+
 ## Use case directory structure
 
-Within each bounded context, use cases follow a consistent directory layout. Understanding this layout is key to navigating the codebase -- once you know the pattern, you can predict exactly where to find any command handler, query response, or domain service.
-
-Each use case (command or query) lives in its own directory under `application/`:
+Within each bounded context, use cases follow a consistent directory layout. Once you know the pattern, you can predict exactly where to find any command handler, query response, or domain service.
 
 ### Command use case (write)
 
 ```
-create_config_entry/
-├── create_config_entry_command.rs            # Command struct
-├── create_config_entry_response.rs           # { error: Option<ConfigEntryErrorEntry> }
-├── config_entry_creator.rs                   # Domain service -> Result<(), DomainError>
-└── create_config_entry_command_handler.rs    # CommandHandler impl with type Response
+create_source/
+├── create_source_command.rs            # Command struct
+├── create_source_response.rs           # { error: Option<SourceErrorEntry> }
+├── source_creator.rs                   # Domain service -> Result<(), DomainError>
+└── create_source_command_handler.rs    # CommandHandler impl with type Response
 ```
 
 ### Query use case (read)
 
 ```
-find_config_entry/
-├── find_config_entry_query.rs                # Query struct
-├── find_config_entry_response.rs             # { config_entry: Option<ConfigEntryEntry>, error: Option<ConfigEntryErrorEntry> }
-├── config_entry_finder.rs                    # Domain service -> Result<ConfigEntry, DomainError>
-└── find_config_entry_query_handler.rs        # QueryHandler impl -- maps entity to DTO
+find_source/
+├── find_source_query.rs                # Query struct
+├── find_source_response.rs             # { source: Option<SourceEntry>, error: Option<SourceErrorEntry> }
+├── source_finder.rs                    # Domain service -> Result<Source, DomainError>
+└── find_source_query_handler.rs        # QueryHandler impl — maps entity to DTO
 ```
 
 ---
 
 ## Naming conventions
 
-The naming conventions below are strictly followed throughout the codebase. They serve two purposes: making it easy to find any type by name (just convert the type name to snake_case and you have the file name), and making the role of each type immediately clear from its name.
+The conventions below are strictly followed throughout the codebase. They serve two purposes: making it easy to find any type by name (convert the type name to snake_case and you have the file name), and making each type's role obvious from its name.
 
 | Concept | Rust name | Example |
 |---|---|---|
-| Aggregate | `PascalCase` struct | `ConfigEntry` |
-| Value Object | `PascalCase` struct | `ConfigKey`, `ConfigValue` |
-| Command | `VerbNounCommand` | `CreateConfigEntryCommand` |
-| Query | `VerbNounQuery` | `FindConfigEntryQuery` |
-| Domain Service | `NounVerber` | `ConfigEntryCreator`, `ConfigEntryFinder` |
-| Command Handler | `VerbNounCommandHandler` | `CreateConfigEntryCommandHandler` |
-| Query Handler | `VerbNounQueryHandler` | `FindConfigEntryQueryHandler` |
-| Command Response | `VerbNounResponse` | `CreateConfigEntryResponse` |
-| Query Response | `VerbNounResponse` | `FindConfigEntryResponse` |
-| Data Entry DTO | `NounEntry` | `ConfigEntryEntry` |
-| Error Entry DTO | `NounErrorEntry` | `ConfigEntryErrorEntry` |
-| Domain Event | `NounPastEvent` | `ConfigEntryCreatedEvent` |
-| Event factory fn | `create_noun_past_event` | `create_config_entry_created_event` |
-| Domain Error | `NounRepositoryError` | `ConfigEntryRepositoryError` |
-| Repository trait | `NounRepository` | `ConfigEntryRepository` |
-| Repo impl -- in-memory | `InMemoryNounRepository` | `InMemoryConfigEntryRepository` |
-| Repo impl -- PostgreSQL | `SqlxPostgresNounRepository` | `SqlxPostgresConfigEntryRepository` |
+| Aggregate | `PascalCase` struct | `Source`, `ConfigEntry` |
+| Value Object | `PascalCase` struct/enum | `SourceId`, `SourceType`, `SourceStatus` |
+| Command | `VerbNounCommand` | `CreateSourceCommand` |
+| Query | `VerbNounQuery` | `FindSourceQuery` |
+| Domain Service | `NounVerber` | `SourceCreator`, `SourceFinder` |
+| Command Handler | `VerbNounCommandHandler` | `CreateSourceCommandHandler` |
+| Query Handler | `VerbNounQueryHandler` | `FindSourceQueryHandler` |
+| Command Response | `VerbNounResponse` | `CreateSourceResponse` |
+| Query Response | `VerbNounResponse` | `FindSourceResponse` |
+| Data Entry DTO | `NounEntry` | `SourceEntry` |
+| Error Entry DTO | `NounErrorEntry` | `SourceErrorEntry` |
+| Domain Event | `NounPastEvent` | `SourceCreatedEvent` |
+| Event factory fn | `create_noun_past_event` | `create_source_created_event` |
+| Domain Error | `NounRepositoryError` | `SourceRepositoryError` |
+| Repository trait | `NounRepository` | `SourceRepository` |
+| In-memory impl | `InMemoryNounRepository` | `InMemorySourceRepository` |
+| Postgres impl (future) | `SqlxPostgresNounRepository` | `SqlxPostgresSourceRepository` |
 
 ---
 
 ## File naming conventions
 
-Files follow a one-type-per-file rule. The file name is always the snake_case version of the primary type it contains. This makes it trivial to locate any type -- if you are looking for `CreateConfigEntryCommandHandler`, it is in `create_config_entry_command_handler.rs`.
+Files follow a one-type-per-file rule. The file name is always the snake_case version of the primary type it contains, which makes any type trivially locatable — if you are looking for `CreateSourceCommandHandler`, it is in `create_source_command_handler.rs`.
 
-Files are named in `snake_case` and mirror the primary type they contain:
+Examples:
 
-- `config_entry.rs` -> `struct ConfigEntry`
-- `config_entry_repository.rs` -> `trait ConfigEntryRepository`
-- `create_config_entry_command.rs` -> `struct CreateConfigEntryCommand`
-- `create_config_entry_response.rs` -> `struct CreateConfigEntryResponse`
-- `find_config_entry_response.rs` -> `struct FindConfigEntryResponse` + `struct ConfigEntryEntry` + `struct ConfigEntryErrorEntry`
+- `source.rs` -> `struct Source`
+- `source_repository.rs` -> `trait SourceRepository`
+- `create_source_command.rs` -> `struct CreateSourceCommand`
+- `create_source_response.rs` -> `struct CreateSourceResponse`
+- `find_source_response.rs` -> `struct FindSourceResponse` + `struct SourceEntry` + `struct SourceErrorEntry`
 
-Each file contains exactly one primary type (response files may contain the entry DTOs too). This makes grepping for a type trivial.
+Response files may contain the matching entry DTOs (data + error) so that consumers find them all together.

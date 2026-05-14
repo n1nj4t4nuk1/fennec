@@ -1,12 +1,12 @@
 # Adding a Bounded Context
 
-A bounded context is a self-contained domain model with its own ubiquitous language. In this template each bounded context lives in `libs/<context>/`.
+A bounded context is a self-contained domain model with its own ubiquitous language. In Fennec each bounded context lives in `libs/<context>/`.
 
 This guide walks through adding a bounded context from scratch. A bounded context in this project is a Cargo library crate that contains a complete domain model: entities, value objects, repository traits, domain events, application services, and infrastructure implementations.
 
 The process is methodical -- you build from the inside out, starting with the domain layer (the core types and rules), then the application layer (the use cases that orchestrate domain logic), and finally the infrastructure layer (the concrete implementations of repository traits). This order ensures that your domain model is clean and self-contained before you add any external dependencies.
 
-The example below creates a `user` bounded context with a `User` aggregate. Replace `user` / `User` with your actual context name throughout. The patterns shown here match exactly what you will find in the existing `config` context.
+The example below creates a `user` bounded context with a `User` aggregate. Replace `user` / `User` with your actual context name throughout. For working references in the codebase, look at the **`kernel`** context (`Source` aggregate with externally-provided UUID, full CRUD, every attribute — including timestamps — is a value object) and the simpler **`config`** context (`ConfigEntry` key/value).
 
 ---
 
