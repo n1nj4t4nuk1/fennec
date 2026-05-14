@@ -1,18 +1,31 @@
-name: Git Mirror
+name: Mirror to Codeberg
 
-on: [push]
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
 
 jobs:
   mirror:
+    name: Push to Codeberg
     runs-on: ubuntu-latest
-    name: Mirror - Forgejo
+
     steps:
-      - uses: actions/checkout@v1
-      - name: Kagami
-        uses: n1nj4t4nuk1/kagami@v1.0.0
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all branches
+        run: |
+          git fetch --prune --no-tags origin '+refs/heads/*:refs/heads/*' || true
+          git fetch --tags origin
+
+      - name: Push to Codeberg
         env:
-          MIRROR_GIT_USERNAME: n1nj4t4nuk1
-          MIRROR_GIT_EMAIL: javierparada@pm.me
-          MIRROR_GIT_HOSTNAME: codeberg.org
-          MIRROR_GIT_PROJECT: "fennec"
-          MIRROR_GIT_TOKEN: ${{ secrets.MIRROR_CODEBERG_TOKEN }}
+          CODEBERG_TOKEN: ${{ secrets.MIRROR_CODEBERG_TOKEN }}
+        run: |
+          set -euo pipefail
+          git remote add codeberg "https://n1nj4t4nuk1:${CODEBERG_TOKEN}@codeberg.org/n1nj4t4nuk1/fennec.git"
+          git push --force codeberg 'refs/heads/*:refs/heads/*'
+          git push --force --tags codeberg
