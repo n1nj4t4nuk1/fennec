@@ -194,7 +194,3 @@ The `docs/` directory contains detailed guides. Start with **ARCHITECTURE.md** f
 | `make audit` | Security audit via cargo-audit |
 | `make docker/up` | Start containers via Docker Compose |
 | `make docker/down` | Stop containers |
-
-## License
-
-See [LICENSE](LICENSE).
