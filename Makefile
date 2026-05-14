@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := build
 
-APPS := config_api
+APPS := config_api cti_api
 
 # Per-app targets — delegated to apps/<name>/Makefile
 define APP_RULES

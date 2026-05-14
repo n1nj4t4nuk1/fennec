@@ -1,0 +1,31 @@
+[package]
+name = "cti-api"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "cti_api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cti-api"
+path = "src/main.rs"
+
+[[test]]
+name = "cti-api-e2e"
+path = "../../tests/apps/cti_api/tests.rs"
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+
+[dependencies]
+actix-web = "4"
+kernel = { path = "../../libs/kernel" }
+shared-cqrs = { path = "../../libs/shared/cqrs" }
+shared-domain-events = { path = "../../libs/shared/domain-events" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
