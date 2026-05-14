@@ -26,6 +26,7 @@ jobs:
           CODEBERG_TOKEN: ${{ secrets.MIRROR_CODEBERG_TOKEN }}
         run: |
           set -euo pipefail
-          git remote add codeberg "https://n1nj4t4nuk1:${CODEBERG_TOKEN}@codeberg.org/n1nj4t4nuk1/fennec.git"
+          TOKEN="$(printf '%s' "${CODEBERG_TOKEN}" | tr -d '[:space:]')"
+          git remote add codeberg "https://n1nj4t4nuk1:${TOKEN}@codeberg.org/n1nj4t4nuk1/fennec.git"
           git push --force codeberg 'refs/heads/*:refs/heads/*'
           git push --force --tags codeberg
